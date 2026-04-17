@@ -55,10 +55,11 @@ function parseTimeToSeconds(value: string): number | null {
 
 function formatSecondsToPace(seconds: number, suffix = ""): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return "-";
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds - mins * 60;
+  const rounded = Math.round(seconds * 10) / 10;
+  const mins = Math.floor(rounded / 60);
+  const secs = rounded - mins * 60;
   const whole = Math.floor(secs);
-  const tenth = Math.round((secs - whole) * 10);
+  const tenth = Math.round((secs - whole) * 10) % 10;
   return `${mins}:${String(whole).padStart(2, "0")}.${tenth}${suffix}`;
 }
 
@@ -117,6 +118,8 @@ function safeRead<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
+
+const MOBILE_BREAKPOINT = 768;
 
 const phaseColors: Record<string, string> = {
   "Phase 1": "#e0f2fe",
@@ -425,6 +428,20 @@ function MetricCard(props: { label: string; value: string }) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"inputs" | "dashboard" | "plan">("inputs");
+  const [viewportWidth, setViewportWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return 1200;
+    return window.innerWidth;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const isMobile = viewportWidth < MOBILE_BREAKPOINT;
+  const isTablet = viewportWidth >= MOBILE_BREAKPOINT && viewportWidth < 1100;
   const [benchmarks, setBenchmarks] = useState<Benchmarks>(() => safeRead(STORAGE_KEYS.currentBenchmarks, defaultBenchmarks));
   const [setup, setSetup] = useState<Setup>(() => safeRead(STORAGE_KEYS.currentSetup, defaultSetup));
   const [profiles, setProfiles] = useState<Profile[]>(() => safeRead(STORAGE_KEYS.profiles, []));
@@ -724,21 +741,101 @@ export default function App() {
     ["Lunge Load", "lungeLoad"],
   ];
 
+  const heroWrapStyle: React.CSSProperties = {
+    ...styles.heroWrap,
+    gridTemplateColumns: isMobile ? "1fr" : isTablet ? "1fr" : "minmax(0, 1.3fr) minmax(320px, 0.7fr)",
+  };
+
+  const featureGridStyle: React.CSSProperties = {
+    ...styles.featureGrid,
+    gridTemplateColumns: isMobile ? "1fr" : isTablet ? "1fr 1fr" : "repeat(3, minmax(0, 1fr))",
+  };
+
+  const heroStatsStyle: React.CSSProperties = {
+    ...styles.heroStats,
+    gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))",
+  };
+
+  const profileBarStyle: React.CSSProperties = {
+    ...styles.profileBar,
+    gridTemplateColumns: isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1.4fr 1fr auto auto auto",
+    alignItems: isMobile ? "stretch" : "end",
+  };
+
+  const grid2Style: React.CSSProperties = {
+    ...styles.grid2,
+    gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(320px, 1fr))",
+  };
+
+  const grid3Style: React.CSSProperties = {
+    ...styles.grid3,
+    gridTemplateColumns: isMobile ? "1fr" : isTablet ? "1fr 1fr" : "repeat(auto-fit, minmax(240px, 1fr))",
+  };
+
+  const heroTitleStyle: React.CSSProperties = {
+    ...styles.heroTitle,
+    fontSize: isMobile ? 22 : isTablet ? 30 : 40,
+    lineHeight: isMobile ? 1.02 : 1.05,
+    wordBreak: "break-word",
+  };
+
+  const heroTextStyle: React.CSSProperties = {
+    ...styles.heroText,
+    fontSize: isMobile ? 14 : 16,
+  };
+
+  const ctaRowStyle: React.CSSProperties = {
+    ...styles.ctaRow,
+    flexDirection: isMobile ? "column" : "row",
+  };
+
+  const pageStyle: React.CSSProperties = {
+    ...styles.page,
+    padding: isMobile ? 12 : 24,
+  };
+
+  const containerStyle: React.CSSProperties = {
+    ...styles.container,
+    gap: isMobile ? 12 : 16,
+  };
+
+  const cardBodyStyle: React.CSSProperties = {
+    ...styles.cardBody,
+    padding: isMobile ? 16 : 20,
+  };
+
+  const inputStyle: React.CSSProperties = {
+    ...styles.input,
+    fontSize: isMobile ? 16 : 14,
+  };
+
+  const selectStyle: React.CSSProperties = {
+    ...styles.select,
+    fontSize: isMobile ? 16 : 14,
+  };
+
+  const tabBarStyle: React.CSSProperties = {
+    ...styles.tabBar,
+    flexWrap: isMobile ? "nowrap" : "wrap",
+    overflowX: isMobile ? "auto" : "visible",
+    paddingBottom: isMobile ? 4 : 0,
+  };
+
   return (
-    <div style={styles.page}>
-      <div style={styles.container}>
-        <div style={styles.heroWrap}>
+    <div style={pageStyle}>
+      <div style={containerStyle}>
+        <div style={heroWrapStyle}>
           <div style={styles.heroCard}>
             <div style={styles.eyebrow}>HYROX performance planning</div>
-            <h1 style={styles.heroTitle}>Build a race-ready HYROX programme from your actual benchmarks.</h1>
-            <p style={styles.heroText}>
+            <h1 style={heroTitleStyle}>Build a race-ready HYROX programme from your actual benchmarks.</h1>
+            <p style={heroTextStyle}>
               Generate structured training phases, benchmark-driven pacing targets, strength progressions, and a full weekly plan tailored to your fitness, race date, and HYROX goals.
             </p>
-            <div style={styles.ctaRow}>
-              <button style={styles.primaryButton} onClick={() => setActiveTab("inputs")}>Build my plan</button>
-              <button style={styles.secondaryButton} onClick={() => setActiveTab("dashboard")}>View performance dashboard</button>
+            <div style={ctaRowStyle}>
+              <button style={{ ...styles.primaryButton, width: isMobile ? "100%" : undefined }} onClick={() => setActiveTab("inputs")}>Build my plan</button>
+              <button style={{ ...styles.secondaryButton, width: isMobile ? "100%" : undefined }} onClick={() => setActiveTab("dashboard")}>View performance dashboard</button>
             </div>
-            <div style={styles.heroStats}>
+            <div style={heroStatsStyle}>
               <div style={styles.statCard}>
                 <div style={styles.smallCaps}>Inputs</div>
                 <div style={{ fontSize: 20, fontWeight: 800 }}>10+</div>
@@ -769,7 +866,7 @@ export default function App() {
           </SectionCard>
         </div>
 
-        <div style={styles.featureGrid}>
+        <div style={featureGridStyle}>
           <div style={styles.featureCard}>
             <div style={styles.featureTitle}>Benchmark-driven pacing</div>
             <p style={styles.featureText}>Uses your row, ski, run, and FTP numbers to generate more usable training targets.</p>
@@ -784,7 +881,7 @@ export default function App() {
           </div>
         </div>
 
-        <div style={styles.tabBar}>
+        <div style={tabBarStyle}>
           <button style={styles.tabButton(activeTab === "inputs")} onClick={() => setActiveTab("inputs")}>Inputs</button>
           <button style={styles.tabButton(activeTab === "dashboard")} onClick={() => setActiveTab("dashboard")}>Dashboard</button>
           <button style={styles.tabButton(activeTab === "plan")} onClick={() => setActiveTab("plan")}>Plan</button>
@@ -793,11 +890,11 @@ export default function App() {
         {activeTab === "inputs" ? (
           <div style={{ display: "grid", gap: 16 }}>
             <SectionCard title="Athlete Profiles" subtitle="Profiles are saved in this browser so users can return without re-entering all their benchmark data.">
-              <div style={styles.profileBar}>
+              <div style={profileBarStyle}>
                 <div style={styles.fieldGroup}>
                   <label style={styles.label}>Profile name</label>
                   <input
-                    style={styles.input}
+                    style={inputStyle}
                     value={profileName}
                     placeholder="e.g. Callum - Johannesburg Pro"
                     onChange={(e) => setProfileName(e.target.value)}
@@ -806,7 +903,7 @@ export default function App() {
                 <div style={styles.fieldGroup}>
                   <label style={styles.label}>Saved profiles</label>
                   <select
-                    style={styles.select}
+                    style={selectStyle}
                     value={selectedProfileId}
                     onChange={(e) => {
                       const nextId = e.target.value;
@@ -822,24 +919,24 @@ export default function App() {
                     ))}
                   </select>
                 </div>
-                <button style={styles.primaryButton} onClick={saveProfile}>
+                <button style={{ ...styles.primaryButton, width: isMobile ? "100%" : undefined }} onClick={saveProfile}>
                   {selectedProfileId ? "Update profile" : "Save profile"}
                 </button>
-                <button style={styles.miniButton} onClick={createNewProfile}>New profile</button>
-                <button style={styles.destructiveButton} onClick={deleteProfile} disabled={!selectedProfileId}>Delete</button>
+                <button style={{ ...styles.miniButton, width: isMobile ? "100%" : undefined }} onClick={createNewProfile}>New profile</button>
+                <button style={{ ...styles.destructiveButton, width: isMobile ? "100%" : undefined, opacity: !selectedProfileId ? 0.6 : 1 }} onClick={deleteProfile} disabled={!selectedProfileId}>Delete</button>
               </div>
             </SectionCard>
 
-            <div style={styles.grid2}>
+            <div style={grid2Style}>
             <SectionCard title="Programme Setup">
               <div style={{ display: "grid", gap: 16 }}>
                 <div style={styles.fieldGroup}>
                   <label style={styles.label}>Start date</label>
-                  <input style={styles.input} type="date" value={setup.startDate} onChange={(e) => setSetup((s) => ({ ...s, startDate: e.target.value }))} />
+                  <input style={inputStyle} type="date" value={setup.startDate} onChange={(e) => setSetup((s) => ({ ...s, startDate: e.target.value }))} />
                 </div>
                 <div style={styles.fieldGroup}>
                   <label style={styles.label}>Race date</label>
-                  <input style={styles.input} type="date" value={setup.raceDate} onChange={(e) => setSetup((s) => ({ ...s, raceDate: e.target.value }))} />
+                  <input style={inputStyle} type="date" value={setup.raceDate} onChange={(e) => setSetup((s) => ({ ...s, raceDate: e.target.value }))} />
                 </div>
                 {setup.startDate && setup.raceDate && program.totalDays === null ? (
                   <div style={styles.warning}>Race date must be after the start date.</div>
@@ -859,12 +956,12 @@ export default function App() {
             </SectionCard>
 
             <SectionCard title="Benchmarks">
-              <div style={styles.grid3}>
+              <div style={grid3Style}>
                 {inputTimeFields.map(([label, key]) => (
                   <div key={key} style={styles.fieldGroup}>
                     <label style={styles.label}>{label}</label>
                     <input
-                      style={styles.input}
+                      style={inputStyle}
                       value={String(benchmarks[key])}
                       onChange={(e) => setBenchmarks((b) => ({ ...b, [key]: e.target.value }))}
                     />
@@ -874,7 +971,7 @@ export default function App() {
                   <div key={key} style={styles.fieldGroup}>
                     <label style={styles.label}>{label}</label>
                     <input
-                      style={styles.input}
+                      style={inputStyle}
                       type="number"
                       step="0.1"
                       value={Number(benchmarks[key])}
@@ -890,13 +987,13 @@ export default function App() {
 
         {activeTab === "dashboard" ? (
           <div style={{ display: "grid", gap: 16 }}>
-            <div style={styles.grid3}>
+            <div style={grid3Style}>
               {benchmarkCards.map((item) => (
                 <MetricCard key={item.label} label={item.label} value={item.value} />
               ))}
             </div>
 
-            <div style={styles.grid2}>
+            <div style={grid2Style}>
               <SectionCard title="Weakness Analysis">
                 <div style={{ display: "grid", gap: 10 }}>
                   {derived.weaknessFlags.map((flag, idx) => (
@@ -943,7 +1040,7 @@ export default function App() {
                           <div style={{ fontSize: 13, color: "#64748b" }}>{session.day}</div>
                           <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2 }}>{session.name}</div>
                         </div>
-                        <div style={styles.grid3}>
+                        <div style={grid3Style}>
                           <div style={styles.softBlock}>
                             <div style={styles.smallCaps}>Main Set</div>
                             <div style={{ fontSize: 14, lineHeight: 1.6 }}>{session.main || "-"}</div>
