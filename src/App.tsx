@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 type Benchmarks = {
   ski500: string;
@@ -28,6 +28,14 @@ type Session = {
   accessory: string;
 };
 
+type Profile = {
+  id: string;
+  name: string;
+  benchmarks: Benchmarks;
+  setup: Setup;
+  updatedAt: string;
+};
+
 function parseTimeToSeconds(value: string): number | null {
   if (!value.trim()) return null;
   const parts = value.trim().split(":");
@@ -50,7 +58,7 @@ function formatSecondsToPace(seconds: number, suffix = ""): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds - mins * 60;
   const whole = Math.floor(secs);
-  const tenth = Math.round((secs - whole) * 10) % 10;
+  const tenth = Math.round((secs - whole) * 10);
   return `${mins}:${String(whole).padStart(2, "0")}.${tenth}${suffix}`;
 }
 
@@ -74,6 +82,42 @@ const strengthPercents = {
   taper: { squat: 0.65, deadlift: 0.65, bss: 0.6, pull: 0.6 },
 };
 
+const STORAGE_KEYS = {
+  currentBenchmarks: "hyrox_planner_current_benchmarks",
+  currentSetup: "hyrox_planner_current_setup",
+  profiles: "hyrox_planner_profiles",
+};
+
+const defaultBenchmarks: Benchmarks = {
+  ski500: "1:47.0",
+  ski2000: "8:33.3",
+  row500: "1:31.7",
+  row2000: "7:28.1",
+  run5k: "23:10.0",
+  ftp: 199,
+  squat5rm: 130,
+  bss5rm: 22.5,
+  deadlift5rm: 190,
+  weightedPullup: 20,
+  lungeLoad: 20,
+};
+
+const defaultSetup: Setup = {
+  startDate: "",
+  raceDate: "",
+  saturdayClass: false,
+};
+
+function safeRead<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 const phaseColors: Record<string, string> = {
   "Phase 1": "#e0f2fe",
   "Phase 2": "#dcfce7",
@@ -81,50 +125,379 @@ const phaseColors: Record<string, string> = {
   Taper: "#ffe4e6",
 };
 
+const styles = {
+  brand: "#1d4ed8",
+  brandSoft: "#dbeafe",
+  page: {
+    minHeight: "100vh",
+    background: "#f8fafc",
+    color: "#0f172a",
+    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    padding: 24,
+  } as React.CSSProperties,
+  container: {
+    maxWidth: 1280,
+    margin: "0 auto",
+    display: "grid",
+    gap: 16,
+  } as React.CSSProperties,
+  card: {
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 20,
+    boxShadow: "0 1px 3px rgba(15, 23, 42, 0.08)",
+  } as React.CSSProperties,
+  cardHeader: {
+    padding: "18px 20px 0 20px",
+  } as React.CSSProperties,
+  cardBody: {
+    padding: 20,
+  } as React.CSSProperties,
+  title: {
+    fontSize: 30,
+    fontWeight: 700,
+    margin: 0,
+  } as React.CSSProperties,
+  subtitle: {
+    fontSize: 14,
+    color: "#475569",
+    lineHeight: 1.6,
+    margin: 0,
+  } as React.CSSProperties,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 700,
+    margin: 0,
+  } as React.CSSProperties,
+  grid2: {
+    display: "grid",
+    gap: 16,
+    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  } as React.CSSProperties,
+  grid3: {
+    display: "grid",
+    gap: 16,
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  } as React.CSSProperties,
+  metricRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: 14,
+    padding: "4px 0",
+  } as React.CSSProperties,
+  fieldGroup: {
+    display: "grid",
+    gap: 8,
+  } as React.CSSProperties,
+  label: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: "#334155",
+  } as React.CSSProperties,
+  input: {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #cbd5e1",
+    fontSize: 14,
+    outline: "none",
+    boxSizing: "border-box",
+  } as React.CSSProperties,
+  switchRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    border: "1px solid #e2e8f0",
+    borderRadius: 16,
+    padding: 14,
+  } as React.CSSProperties,
+  pill: {
+    display: "inline-block",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+  } as React.CSSProperties,
+  tabBar: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+  } as React.CSSProperties,
+  tabButton: (active: boolean) => ({
+    padding: "10px 14px",
+    borderRadius: 12,
+    border: active ? "1px solid #1d4ed8" : "1px solid #cbd5e1",
+    background: active ? "#dbeafe" : "#ffffff",
+    cursor: "pointer",
+    fontWeight: 600,
+  }) as React.CSSProperties,
+  sessionCard: {
+    border: "1px solid #e2e8f0",
+    borderRadius: 18,
+    padding: 16,
+    background: "#ffffff",
+  } as React.CSSProperties,
+  softBlock: {
+    background: "#f8fafc",
+    borderRadius: 14,
+    padding: 14,
+  } as React.CSSProperties,
+  smallCaps: {
+    fontSize: 11,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.08,
+    color: "#64748b",
+    fontWeight: 700,
+    marginBottom: 6,
+  } as React.CSSProperties,
+  warning: {
+    border: "1px solid #fecaca",
+    background: "#fef2f2",
+    color: "#b91c1c",
+    borderRadius: 14,
+    padding: 12,
+    fontSize: 12,
+  } as React.CSSProperties,
+  footerButton: {
+    padding: "10px 14px",
+    borderRadius: 12,
+    border: "1px solid #cbd5e1",
+    background: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 600,
+  } as React.CSSProperties,
+  heroWrap: {
+    display: "grid",
+    gap: 16,
+    gridTemplateColumns: "minmax(0, 1.3fr) minmax(320px, 0.7fr)",
+  } as React.CSSProperties,
+  heroCard: {
+    background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 55%, #f8fafc 100%)",
+    border: "1px solid #bfdbfe",
+    borderRadius: 24,
+    boxShadow: "0 10px 30px rgba(29, 78, 216, 0.08)",
+    padding: 28,
+  } as React.CSSProperties,
+  eyebrow: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "#dbeafe",
+    color: "#1e3a8a",
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: 0.04,
+    textTransform: "uppercase" as const,
+  } as React.CSSProperties,
+  heroTitle: {
+    fontSize: 40,
+    lineHeight: 1.05,
+    fontWeight: 800,
+    margin: "14px 0 12px 0",
+    letterSpacing: "-0.03em",
+  } as React.CSSProperties,
+  heroText: {
+    fontSize: 16,
+    color: "#334155",
+    lineHeight: 1.7,
+    margin: 0,
+  } as React.CSSProperties,
+  ctaRow: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    marginTop: 18,
+  } as React.CSSProperties,
+  primaryButton: {
+    padding: "12px 16px",
+    borderRadius: 12,
+    border: "1px solid #1d4ed8",
+    background: "#1d4ed8",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 700,
+  } as React.CSSProperties,
+  secondaryButton: {
+    padding: "12px 16px",
+    borderRadius: 12,
+    border: "1px solid #cbd5e1",
+    background: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 700,
+  } as React.CSSProperties,
+  heroStats: {
+    display: "grid",
+    gap: 12,
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    marginTop: 18,
+  } as React.CSSProperties,
+  statCard: {
+    border: "1px solid #dbeafe",
+    background: "rgba(255,255,255,0.85)",
+    borderRadius: 16,
+    padding: 14,
+  } as React.CSSProperties,
+  featureGrid: {
+    display: "grid",
+    gap: 12,
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  } as React.CSSProperties,
+  featureCard: {
+    border: "1px solid #e2e8f0",
+    background: "#ffffff",
+    borderRadius: 18,
+    padding: 16,
+  } as React.CSSProperties,
+  featureTitle: {
+    fontSize: 15,
+    fontWeight: 700,
+    marginBottom: 6,
+  } as React.CSSProperties,
+  featureText: {
+    fontSize: 13,
+    color: "#64748b",
+    lineHeight: 1.6,
+    margin: 0,
+  } as React.CSSProperties,
+  profileBar: {
+    display: "grid",
+    gap: 12,
+    gridTemplateColumns: "1.4fr 1fr auto auto auto",
+    alignItems: "end",
+  } as React.CSSProperties,
+  select: {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #cbd5e1",
+    fontSize: 14,
+    outline: "none",
+    boxSizing: "border-box",
+    background: "#ffffff",
+  } as React.CSSProperties,
+  miniButton: {
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #cbd5e1",
+    background: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 600,
+    whiteSpace: "nowrap" as const,
+  } as React.CSSProperties,
+  destructiveButton: {
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #fecaca",
+    background: "#fff1f2",
+    color: "#be123c",
+    cursor: "pointer",
+    fontWeight: 600,
+    whiteSpace: "nowrap" as const,
+  } as React.CSSProperties,
+};
+
 function SectionCard(props: { title: string; children: React.ReactNode; subtitle?: string }) {
   return (
-    <section className="card">
-      <div className="card-header">
-        <h2 className="section-title">{props.title}</h2>
-        {props.subtitle ? <p className="subtitle mt-6">{props.subtitle}</p> : null}
+    <div style={styles.card}>
+      <div style={styles.cardHeader}>
+        <h2 style={styles.sectionTitle}>{props.title}</h2>
+        {props.subtitle ? <p style={{ ...styles.subtitle, marginTop: 6 }}>{props.subtitle}</p> : null}
       </div>
-      <div className="card-body">{props.children}</div>
-    </section>
+      <div style={styles.cardBody}>{props.children}</div>
+    </div>
   );
 }
 
 function MetricCard(props: { label: string; value: string }) {
   return (
-    <section className="card metric-card">
-      <div className="card-body">
-        <div className="metric-label">{props.label}</div>
-        <div className="metric-value">{props.value}</div>
+    <div style={styles.card}>
+      <div style={styles.cardBody}>
+        <div style={{ fontSize: 14, color: "#64748b" }}>{props.label}</div>
+        <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4 }}>{props.value}</div>
       </div>
-    </section>
+    </div>
   );
 }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"inputs" | "dashboard" | "plan">("inputs");
-  const [benchmarks, setBenchmarks] = useState<Benchmarks>({
-    ski500: "1:47.0",
-    ski2000: "8:33.3",
-    row500: "1:31.7",
-    row2000: "7:28.1",
-    run5k: "23:10.0",
-    ftp: 199,
-    squat5rm: 130,
-    bss5rm: 22.5,
-    deadlift5rm: 190,
-    weightedPullup: 20,
-    lungeLoad: 20,
-  });
+  const [benchmarks, setBenchmarks] = useState<Benchmarks>(() => safeRead(STORAGE_KEYS.currentBenchmarks, defaultBenchmarks));
+  const [setup, setSetup] = useState<Setup>(() => safeRead(STORAGE_KEYS.currentSetup, defaultSetup));
+  const [profiles, setProfiles] = useState<Profile[]>(() => safeRead(STORAGE_KEYS.profiles, []));
+  const [selectedProfileId, setSelectedProfileId] = useState<string>("");
+  const [profileName, setProfileName] = useState<string>("");
 
-  const [setup, setSetup] = useState<Setup>({
-    startDate: "",
-    raceDate: "",
-    saturdayClass: false,
-  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(STORAGE_KEYS.currentBenchmarks, JSON.stringify(benchmarks));
+  }, [benchmarks]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(STORAGE_KEYS.currentSetup, JSON.stringify(setup));
+  }, [setup]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(STORAGE_KEYS.profiles, JSON.stringify(profiles));
+  }, [profiles]);
+
+  function saveProfile() {
+    const trimmed = profileName.trim();
+    if (!trimmed) {
+      window.alert("Enter a profile name first.");
+      return;
+    }
+
+    const existing = selectedProfileId ? profiles.find((p) => p.id === selectedProfileId) : undefined;
+    const id = existing?.id ?? `profile_${Date.now()}`;
+
+    const nextProfile: Profile = {
+      id,
+      name: trimmed,
+      benchmarks,
+      setup,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setProfiles((prev) => {
+      const filtered = prev.filter((p) => p.id !== id);
+      return [nextProfile, ...filtered].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    });
+    setSelectedProfileId(id);
+  }
+
+  function loadProfile(profileId: string) {
+    const profile = profiles.find((p) => p.id === profileId);
+    if (!profile) return;
+    setBenchmarks(profile.benchmarks);
+    setSetup(profile.setup);
+    setSelectedProfileId(profile.id);
+    setProfileName(profile.name);
+    setActiveTab("inputs");
+  }
+
+  function createNewProfile() {
+    setSelectedProfileId("");
+    setProfileName("");
+    setBenchmarks(defaultBenchmarks);
+    setSetup(defaultSetup);
+    setActiveTab("inputs");
+  }
+
+  function deleteProfile() {
+    if (!selectedProfileId) return;
+    const profile = profiles.find((p) => p.id === selectedProfileId);
+    const confirmed = window.confirm(`Delete profile${profile ? `: ${profile.name}` : ""}?`);
+    if (!confirmed) return;
+    setProfiles((prev) => prev.filter((p) => p.id !== selectedProfileId));
+    setSelectedProfileId("");
+    setProfileName("");
+  }
 
   const derived = useMemo(() => {
     const ski500 = parseTimeToSeconds(benchmarks.ski500);
@@ -352,55 +725,129 @@ export default function App() {
   ];
 
   return (
-    <div className="page-shell">
-      <div className="app-container">
-        <div className="grid-2">
-          <SectionCard
-            title="HYROX Planner App"
-            subtitle="Vite-ready React version based on your spreadsheet logic. This is structured to be moved into a standard project and deployed later on Netlify."
-          >
-            <div className="stack-12">
-              <div className="subtitle">Built from your spreadsheet logic: benchmarks, date-driven phase allocation, pacing, strength progression, and a full weekly plan.</div>
+    <div style={styles.page}>
+      <div style={styles.container}>
+        <div style={styles.heroWrap}>
+          <div style={styles.heroCard}>
+            <div style={styles.eyebrow}>HYROX performance planning</div>
+            <h1 style={styles.heroTitle}>Build a race-ready HYROX programme from your actual benchmarks.</h1>
+            <p style={styles.heroText}>
+              Generate structured training phases, benchmark-driven pacing targets, strength progressions, and a full weekly plan tailored to your fitness, race date, and HYROX goals.
+            </p>
+            <div style={styles.ctaRow}>
+              <button style={styles.primaryButton} onClick={() => setActiveTab("inputs")}>Build my plan</button>
+              <button style={styles.secondaryButton} onClick={() => setActiveTab("dashboard")}>View performance dashboard</button>
             </div>
-          </SectionCard>
+            <div style={styles.heroStats}>
+              <div style={styles.statCard}>
+                <div style={styles.smallCaps}>Inputs</div>
+                <div style={{ fontSize: 20, fontWeight: 800 }}>10+</div>
+                <div style={styles.featureText}>Benchmarks and strength metrics</div>
+              </div>
+              <div style={styles.statCard}>
+                <div style={styles.smallCaps}>Output</div>
+                <div style={{ fontSize: 20, fontWeight: 800 }}>Full block</div>
+                <div style={styles.featureText}>Date-driven weekly HYROX programming</div>
+              </div>
+              <div style={styles.statCard}>
+                <div style={styles.smallCaps}>Focus</div>
+                <div style={{ fontSize: 20, fontWeight: 800 }}>Race specific</div>
+                <div style={styles.featureText}>Pacing, strength, and hybrid readiness</div>
+              </div>
+            </div>
+          </div>
 
-          <SectionCard title="Programme Window">
-            <div className="metric-stack">
-              <div className="metric-row"><span>Total days</span><strong>{program.totalDays ?? "-"}</strong></div>
-              <div className="metric-row"><span>Total weeks</span><strong>{program.totalDays !== null ? program.totalWeeks : "-"}</strong></div>
-              <div className="metric-row"><span>Phase 1</span><strong>{program.totalDays !== null ? program.phase1Weeks : "-"}</strong></div>
-              <div className="metric-row"><span>Phase 2</span><strong>{program.totalDays !== null ? program.phase2Weeks : "-"}</strong></div>
-              <div className="metric-row"><span>Phase 3</span><strong>{program.totalDays !== null ? program.phase3Weeks : "-"}</strong></div>
-              <div className="metric-row"><span>Taper</span><strong>{program.totalDays !== null ? program.taperWeeks : "-"}</strong></div>
+          <SectionCard title="Programme Window" subtitle="Your training block updates automatically once you enter a valid start date and race date.">
+            <div style={{ display: "grid", gap: 4 }}>
+              <div style={styles.metricRow}><span>Total days</span><strong>{program.totalDays ?? "-"}</strong></div>
+              <div style={styles.metricRow}><span>Total weeks</span><strong>{program.totalDays !== null ? program.totalWeeks : "-"}</strong></div>
+              <div style={styles.metricRow}><span>Phase 1</span><strong>{program.totalDays !== null ? program.phase1Weeks : "-"}</strong></div>
+              <div style={styles.metricRow}><span>Phase 2</span><strong>{program.totalDays !== null ? program.phase2Weeks : "-"}</strong></div>
+              <div style={styles.metricRow}><span>Phase 3</span><strong>{program.totalDays !== null ? program.phase3Weeks : "-"}</strong></div>
+              <div style={styles.metricRow}><span>Taper</span><strong>{program.totalDays !== null ? program.taperWeeks : "-"}</strong></div>
             </div>
           </SectionCard>
         </div>
 
-        <div className="tab-bar">
-          <button className={activeTab === "inputs" ? "tab-button active" : "tab-button"} onClick={() => setActiveTab("inputs")}>Inputs</button>
-          <button className={activeTab === "dashboard" ? "tab-button active" : "tab-button"} onClick={() => setActiveTab("dashboard")}>Dashboard</button>
-          <button className={activeTab === "plan" ? "tab-button active" : "tab-button"} onClick={() => setActiveTab("plan")}>Plan</button>
+        <div style={styles.featureGrid}>
+          <div style={styles.featureCard}>
+            <div style={styles.featureTitle}>Benchmark-driven pacing</div>
+            <p style={styles.featureText}>Uses your row, ski, run, and FTP numbers to generate more usable training targets.</p>
+          </div>
+          <div style={styles.featureCard}>
+            <div style={styles.featureTitle}>Phase-based loading</div>
+            <p style={styles.featureText}>Strength work shifts through build, specific preparation, and taper instead of staying static.</p>
+          </div>
+          <div style={styles.featureCard}>
+            <div style={styles.featureTitle}>HYROX-specific structure</div>
+            <p style={styles.featureText}>Each week includes hybrid sessions, erg work, strength, accessory work, and race-relevant fatigue management.</p>
+          </div>
+        </div>
+
+        <div style={styles.tabBar}>
+          <button style={styles.tabButton(activeTab === "inputs")} onClick={() => setActiveTab("inputs")}>Inputs</button>
+          <button style={styles.tabButton(activeTab === "dashboard")} onClick={() => setActiveTab("dashboard")}>Dashboard</button>
+          <button style={styles.tabButton(activeTab === "plan")} onClick={() => setActiveTab("plan")}>Plan</button>
         </div>
 
         {activeTab === "inputs" ? (
-          <div className="grid-2">
-            <SectionCard title="Programme Setup">
-              <div className="stack-16">
-                <div className="field-group">
-                  <label className="label">Start date</label>
-                  <input className="input" type="date" value={setup.startDate} onChange={(e) => setSetup((s) => ({ ...s, startDate: e.target.value }))} />
+          <div style={{ display: "grid", gap: 16 }}>
+            <SectionCard title="Athlete Profiles" subtitle="Profiles are saved in this browser so users can return without re-entering all their benchmark data.">
+              <div style={styles.profileBar}>
+                <div style={styles.fieldGroup}>
+                  <label style={styles.label}>Profile name</label>
+                  <input
+                    style={styles.input}
+                    value={profileName}
+                    placeholder="e.g. Callum - Johannesburg Pro"
+                    onChange={(e) => setProfileName(e.target.value)}
+                  />
                 </div>
-                <div className="field-group">
-                  <label className="label">Race date</label>
-                  <input className="input" type="date" value={setup.raceDate} onChange={(e) => setSetup((s) => ({ ...s, raceDate: e.target.value }))} />
+                <div style={styles.fieldGroup}>
+                  <label style={styles.label}>Saved profiles</label>
+                  <select
+                    style={styles.select}
+                    value={selectedProfileId}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      setSelectedProfileId(nextId);
+                      if (nextId) loadProfile(nextId);
+                    }}
+                  >
+                    <option value="">Select a saved profile</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button style={styles.primaryButton} onClick={saveProfile}>
+                  {selectedProfileId ? "Update profile" : "Save profile"}
+                </button>
+                <button style={styles.miniButton} onClick={createNewProfile}>New profile</button>
+                <button style={styles.destructiveButton} onClick={deleteProfile} disabled={!selectedProfileId}>Delete</button>
+              </div>
+            </SectionCard>
+
+            <div style={styles.grid2}>
+            <SectionCard title="Programme Setup">
+              <div style={{ display: "grid", gap: 16 }}>
+                <div style={styles.fieldGroup}>
+                  <label style={styles.label}>Start date</label>
+                  <input style={styles.input} type="date" value={setup.startDate} onChange={(e) => setSetup((s) => ({ ...s, startDate: e.target.value }))} />
+                </div>
+                <div style={styles.fieldGroup}>
+                  <label style={styles.label}>Race date</label>
+                  <input style={styles.input} type="date" value={setup.raceDate} onChange={(e) => setSetup((s) => ({ ...s, raceDate: e.target.value }))} />
                 </div>
                 {setup.startDate && setup.raceDate && program.totalDays === null ? (
-                  <div className="warning-box">Race date must be after the start date.</div>
+                  <div style={styles.warning}>Race date must be after the start date.</div>
                 ) : null}
-                <div className="switch-row">
+                <div style={styles.switchRow}>
                   <div>
-                    <div className="switch-title">Include Saturday HYROX class</div>
-                    <div className="switch-subtitle">Replaces an existing hard hybrid session rather than adding extra load.</div>
+                    <div style={{ fontWeight: 600 }}>Include Saturday HYROX class</div>
+                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>Replaces an existing hard hybrid session rather than adding extra load.</div>
                   </div>
                   <input
                     type="checkbox"
@@ -412,22 +859,22 @@ export default function App() {
             </SectionCard>
 
             <SectionCard title="Benchmarks">
-              <div className="grid-3">
+              <div style={styles.grid3}>
                 {inputTimeFields.map(([label, key]) => (
-                  <div key={key} className="field-group">
-                    <label className="label">{label}</label>
+                  <div key={key} style={styles.fieldGroup}>
+                    <label style={styles.label}>{label}</label>
                     <input
-                      className="input"
+                      style={styles.input}
                       value={String(benchmarks[key])}
                       onChange={(e) => setBenchmarks((b) => ({ ...b, [key]: e.target.value }))}
                     />
                   </div>
                 ))}
                 {inputNumberFields.map(([label, key]) => (
-                  <div key={key} className="field-group">
-                    <label className="label">{label}</label>
+                  <div key={key} style={styles.fieldGroup}>
+                    <label style={styles.label}>{label}</label>
                     <input
-                      className="input"
+                      style={styles.input}
                       type="number"
                       step="0.1"
                       value={Number(benchmarks[key])}
@@ -438,37 +885,38 @@ export default function App() {
               </div>
             </SectionCard>
           </div>
+        </div>
         ) : null}
 
         {activeTab === "dashboard" ? (
-          <div className="stack-16">
-            <div className="grid-3">
+          <div style={{ display: "grid", gap: 16 }}>
+            <div style={styles.grid3}>
               {benchmarkCards.map((item) => (
                 <MetricCard key={item.label} label={item.label} value={item.value} />
               ))}
             </div>
 
-            <div className="grid-2">
+            <div style={styles.grid2}>
               <SectionCard title="Weakness Analysis">
-                <div className="stack-10">
+                <div style={{ display: "grid", gap: 10 }}>
                   {derived.weaknessFlags.map((flag, idx) => (
-                    <div key={idx} className="soft-block bordered">{flag}</div>
+                    <div key={idx} style={{ ...styles.softBlock, border: "1px solid #e2e8f0" }}>{flag}</div>
                   ))}
                 </div>
               </SectionCard>
 
               <SectionCard title="Reference Zones">
-                <div className="stack-10">
-                  <div className="soft-block bordered">
-                    <div className="zone-title">Row VO2</div>
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={{ ...styles.softBlock, border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Row VO2</div>
                     <div>{derived.row2kSplit ? `${formatSecondsToPace(derived.row2kSplit - 6, "/500m")} to ${formatSecondsToPace(derived.row2kSplit - 4, "/500m")}` : "-"}</div>
                   </div>
-                  <div className="soft-block bordered">
-                    <div className="zone-title">Row Threshold</div>
+                  <div style={{ ...styles.softBlock, border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Row Threshold</div>
                     <div>{derived.row2kSplit ? `${formatSecondsToPace(derived.row2kSplit + 2, "/500m")} to ${formatSecondsToPace(derived.row2kSplit + 4, "/500m")}` : "-"}</div>
                   </div>
-                  <div className="soft-block bordered">
-                    <div className="zone-title">Ski VO2</div>
+                  <div style={{ ...styles.softBlock, border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Ski VO2</div>
                     <div>{derived.ski2kSplit ? `${formatSecondsToPace(derived.ski2kSplit - 6, "/500m")} to ${formatSecondsToPace(derived.ski2kSplit - 4, "/500m")}` : "-"}</div>
                   </div>
                 </div>
@@ -478,35 +926,35 @@ export default function App() {
         ) : null}
 
         {activeTab === "plan" ? (
-          <div className="stack-16">
+          <div style={{ display: "grid", gap: 16 }}>
             {program.rows.map((week) => (
-              <div key={week.week} className="card">
-                <div className="card-header">
-                  <div className="week-header">
-                    <h2 className="section-title">Week {week.week}</h2>
-                    <span className="phase-pill" style={{ background: phaseColors[week.phase] }}>{week.phase}</span>
+              <div key={week.week} style={styles.card}>
+                <div style={styles.cardHeader}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                    <h2 style={styles.sectionTitle}>Week {week.week}</h2>
+                    <span style={{ ...styles.pill, background: phaseColors[week.phase] }}>{week.phase}</span>
                   </div>
                 </div>
-                <div className="card-body">
-                  <div className="stack-12">
+                <div style={styles.cardBody}>
+                  <div style={{ display: "grid", gap: 12 }}>
                     {week.sessions.map((session) => (
-                      <div key={`${week.week}-${session.day}`} className="session-card">
-                        <div className="session-heading">
-                          <div className="session-day">{session.day}</div>
-                          <div className="session-name">{session.name}</div>
+                      <div key={`${week.week}-${session.day}`} style={styles.sessionCard}>
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ fontSize: 13, color: "#64748b" }}>{session.day}</div>
+                          <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2 }}>{session.name}</div>
                         </div>
-                        <div className="grid-3">
-                          <div className="soft-block">
-                            <div className="small-caps">Main Set</div>
-                            <div className="session-copy">{session.main || "-"}</div>
+                        <div style={styles.grid3}>
+                          <div style={styles.softBlock}>
+                            <div style={styles.smallCaps}>Main Set</div>
+                            <div style={{ fontSize: 14, lineHeight: 1.6 }}>{session.main || "-"}</div>
                           </div>
-                          <div className="soft-block">
-                            <div className="small-caps">Strength</div>
-                            <div className="session-copy">{session.strength || "-"}</div>
+                          <div style={styles.softBlock}>
+                            <div style={styles.smallCaps}>Strength</div>
+                            <div style={{ fontSize: 14, lineHeight: 1.6 }}>{session.strength || "-"}</div>
                           </div>
-                          <div className="soft-block">
-                            <div className="small-caps">Accessory</div>
-                            <div className="session-copy">{session.accessory || "-"}</div>
+                          <div style={styles.softBlock}>
+                            <div style={styles.smallCaps}>Accessory</div>
+                            <div style={{ fontSize: 14, lineHeight: 1.6 }}>{session.accessory || "-"}</div>
                           </div>
                         </div>
                       </div>
@@ -518,14 +966,7 @@ export default function App() {
           </div>
         ) : null}
 
-        <div className="card">
-          <div className="card-body footer-row">
-            <div className="subtitle">
-              This project is ready to be wrapped in a normal Vite file structure and pushed to a Git repo for Netlify deployment.
-            </div>
-            <button className="footer-button" type="button">Deployable next step</button>
-          </div>
-        </div>
+        
       </div>
     </div>
   );
