@@ -36,6 +36,59 @@ type Profile = {
   updatedAt: string;
 };
 
+const MOBILE_BREAKPOINT = 768;
+const TABLET_BREAKPOINT = 1100;
+
+const STORAGE_KEYS = {
+  currentBenchmarks: "hyrox_planner_current_benchmarks",
+  currentSetup: "hyrox_planner_current_setup",
+  profiles: "hyrox_planner_profiles",
+};
+
+const defaultBenchmarks: Benchmarks = {
+  ski500: "1:47.0",
+  ski2000: "8:33.3",
+  row500: "1:31.7",
+  row2000: "7:28.1",
+  run5k: "23:10.0",
+  ftp: 199,
+  squat5rm: 130,
+  bss5rm: 22.5,
+  deadlift5rm: 190,
+  weightedPullup: 20,
+  lungeLoad: 20,
+};
+
+const defaultSetup: Setup = {
+  startDate: "",
+  raceDate: "",
+  saturdayClass: false,
+};
+
+const strengthPercents = {
+  phase1: { squat: 0.72, deadlift: 0.77, bss: 0.72, pull: 0.77 },
+  phase2: { squat: 0.8, deadlift: 0.84, bss: 0.78, pull: 0.84 },
+  phase3: { squat: 0.85, deadlift: 0.88, bss: 0.74, pull: 0.79 },
+  taper: { squat: 0.65, deadlift: 0.65, bss: 0.6, pull: 0.6 },
+};
+
+const phaseColors: Record<string, string> = {
+  "Phase 1": "#e0f2fe",
+  "Phase 2": "#dcfce7",
+  "Phase 3": "#fef3c7",
+  Taper: "#ffe4e6",
+};
+
+function safeRead<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function parseTimeToSeconds(value: string): number | null {
   if (!value.trim()) return null;
   const parts = value.trim().split(":");
@@ -65,7 +118,7 @@ function formatSecondsToPace(seconds: number, suffix = ""): string {
 
 function startOfDay(value: string): Date | null {
   if (!value) return null;
-  const d = new Date(value + "T00:00:00");
+  const d = new Date(`${value}T00:00:00`);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -76,61 +129,7 @@ function daysBetween(start: Date | null, end: Date | null): number | null {
   return Math.ceil(ms / (1000 * 60 * 60 * 24));
 }
 
-const strengthPercents = {
-  phase1: { squat: 0.72, deadlift: 0.77, bss: 0.72, pull: 0.77 },
-  phase2: { squat: 0.8, deadlift: 0.84, bss: 0.78, pull: 0.84 },
-  phase3: { squat: 0.85, deadlift: 0.88, bss: 0.74, pull: 0.79 },
-  taper: { squat: 0.65, deadlift: 0.65, bss: 0.6, pull: 0.6 },
-};
-
-const STORAGE_KEYS = {
-  currentBenchmarks: "hyrox_planner_current_benchmarks",
-  currentSetup: "hyrox_planner_current_setup",
-  profiles: "hyrox_planner_profiles",
-};
-
-const defaultBenchmarks: Benchmarks = {
-  ski500: "1:47.0",
-  ski2000: "8:33.3",
-  row500: "1:31.7",
-  row2000: "7:28.1",
-  run5k: "23:10.0",
-  ftp: 199,
-  squat5rm: 130,
-  bss5rm: 22.5,
-  deadlift5rm: 190,
-  weightedPullup: 20,
-  lungeLoad: 20,
-};
-
-const defaultSetup: Setup = {
-  startDate: "",
-  raceDate: "",
-  saturdayClass: false,
-};
-
-function safeRead<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-const MOBILE_BREAKPOINT = 768;
-
-const phaseColors: Record<string, string> = {
-  "Phase 1": "#e0f2fe",
-  "Phase 2": "#dcfce7",
-  "Phase 3": "#fef3c7",
-  Taper: "#ffe4e6",
-};
-
 const styles = {
-  brand: "#1d4ed8",
-  brandSoft: "#dbeafe",
   page: {
     minHeight: "100vh",
     background: "#f8fafc",
@@ -156,8 +155,8 @@ const styles = {
   cardBody: {
     padding: 20,
   } as React.CSSProperties,
-  title: {
-    fontSize: 30,
+  sectionTitle: {
+    fontSize: 18,
     fontWeight: 700,
     margin: 0,
   } as React.CSSProperties,
@@ -165,11 +164,6 @@ const styles = {
     fontSize: 14,
     color: "#475569",
     lineHeight: 1.6,
-    margin: 0,
-  } as React.CSSProperties,
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 700,
     margin: 0,
   } as React.CSSProperties,
   grid2: {
@@ -206,6 +200,17 @@ const styles = {
     fontSize: 14,
     outline: "none",
     boxSizing: "border-box",
+    background: "#ffffff",
+  } as React.CSSProperties,
+  select: {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #cbd5e1",
+    fontSize: 14,
+    outline: "none",
+    boxSizing: "border-box",
+    background: "#ffffff",
   } as React.CSSProperties,
   switchRow: {
     display: "flex",
@@ -262,14 +267,6 @@ const styles = {
     borderRadius: 14,
     padding: 12,
     fontSize: 12,
-  } as React.CSSProperties,
-  footerButton: {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "1px solid #cbd5e1",
-    background: "#ffffff",
-    cursor: "pointer",
-    fontWeight: 600,
   } as React.CSSProperties,
   heroWrap: {
     display: "grid",
@@ -372,16 +369,6 @@ const styles = {
     gridTemplateColumns: "1.4fr 1fr auto auto auto",
     alignItems: "end",
   } as React.CSSProperties,
-  select: {
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid #cbd5e1",
-    fontSize: 14,
-    outline: "none",
-    boxSizing: "border-box",
-    background: "#ffffff",
-  } as React.CSSProperties,
   miniButton: {
     padding: "10px 12px",
     borderRadius: 12,
@@ -400,6 +387,34 @@ const styles = {
     cursor: "pointer",
     fontWeight: 600,
     whiteSpace: "nowrap" as const,
+  } as React.CSSProperties,
+  mobileBuildSection: {
+    position: "sticky" as const,
+    bottom: 0,
+    background: "linear-gradient(180deg, rgba(248,250,252,0.85) 0%, #f8fafc 30%, #f8fafc 100%)",
+    paddingTop: 12,
+    marginTop: 8,
+  } as React.CSSProperties,
+  mobileBuildCard: {
+    background: "#ffffff",
+    border: "1px solid #bfdbfe",
+    borderRadius: 18,
+    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.08)",
+    padding: 14,
+  } as React.CSSProperties,
+  mobileBuildText: {
+    fontSize: 13,
+    color: "#475569",
+    lineHeight: 1.5,
+    margin: "0 0 10px 0",
+  } as React.CSSProperties,
+  mobileBuildMeta: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    fontSize: 12,
+    color: "#64748b",
+    marginBottom: 10,
   } as React.CSSProperties,
 };
 
@@ -432,6 +447,11 @@ export default function App() {
     if (typeof window === "undefined") return 1200;
     return window.innerWidth;
   });
+  const [benchmarks, setBenchmarks] = useState<Benchmarks>(() => safeRead(STORAGE_KEYS.currentBenchmarks, defaultBenchmarks));
+  const [setup, setSetup] = useState<Setup>(() => safeRead(STORAGE_KEYS.currentSetup, defaultSetup));
+  const [profiles, setProfiles] = useState<Profile[]>(() => safeRead(STORAGE_KEYS.profiles, []));
+  const [selectedProfileId, setSelectedProfileId] = useState<string>("");
+  const [profileName, setProfileName] = useState<string>("");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -439,14 +459,6 @@ export default function App() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-
-  const isMobile = viewportWidth < MOBILE_BREAKPOINT;
-  const isTablet = viewportWidth >= MOBILE_BREAKPOINT && viewportWidth < 1100;
-  const [benchmarks, setBenchmarks] = useState<Benchmarks>(() => safeRead(STORAGE_KEYS.currentBenchmarks, defaultBenchmarks));
-  const [setup, setSetup] = useState<Setup>(() => safeRead(STORAGE_KEYS.currentSetup, defaultSetup));
-  const [profiles, setProfiles] = useState<Profile[]>(() => safeRead(STORAGE_KEYS.profiles, []));
-  const [selectedProfileId, setSelectedProfileId] = useState<string>("");
-  const [profileName, setProfileName] = useState<string>("");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -462,6 +474,9 @@ export default function App() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(STORAGE_KEYS.profiles, JSON.stringify(profiles));
   }, [profiles]);
+
+  const isMobile = viewportWidth < MOBILE_BREAKPOINT;
+  const isTablet = viewportWidth >= MOBILE_BREAKPOINT && viewportWidth < TABLET_BREAKPOINT;
 
   function saveProfile() {
     const trimmed = profileName.trim();
@@ -514,6 +529,13 @@ export default function App() {
     setProfiles((prev) => prev.filter((p) => p.id !== selectedProfileId));
     setSelectedProfileId("");
     setProfileName("");
+  }
+
+  function buildPlan() {
+    setActiveTab("dashboard");
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   const derived = useMemo(() => {
@@ -687,7 +709,7 @@ export default function App() {
         {
           day: "Day 7",
           name: "Rest",
-          main: `Rest day — no training prescribed`,
+          main: "Rest day — no training prescribed",
           strength: "-",
           accessory: "-",
         },
@@ -799,11 +821,6 @@ export default function App() {
     gap: isMobile ? 12 : 16,
   };
 
-  const cardBodyStyle: React.CSSProperties = {
-    ...styles.cardBody,
-    padding: isMobile ? 16 : 20,
-  };
-
   const inputStyle: React.CSSProperties = {
     ...styles.input,
     fontSize: isMobile ? 16 : 14,
@@ -824,37 +841,67 @@ export default function App() {
   return (
     <div style={pageStyle}>
       <div style={containerStyle}>
-        <div style={heroWrapStyle}>
-          <div style={styles.heroCard}>
-            <div style={styles.eyebrow}>HYROX performance planning</div>
-            <h1 style={heroTitleStyle}>Build a race-ready HYROX programme from your actual benchmarks.</h1>
-            <p style={heroTextStyle}>
-              Generate structured training phases, benchmark-driven pacing targets, strength progressions, and a full weekly plan tailored to your fitness, race date, and HYROX goals.
-            </p>
-            <div style={ctaRowStyle}>
-              <button style={{ ...styles.primaryButton, width: isMobile ? "100%" : undefined }} onClick={() => setActiveTab("inputs")}>Build my plan</button>
-              <button style={{ ...styles.secondaryButton, width: isMobile ? "100%" : undefined }} onClick={() => setActiveTab("dashboard")}>View performance dashboard</button>
-            </div>
-            <div style={heroStatsStyle}>
-              <div style={styles.statCard}>
-                <div style={styles.smallCaps}>Inputs</div>
-                <div style={{ fontSize: 20, fontWeight: 800 }}>10+</div>
-                <div style={styles.featureText}>Benchmarks and strength metrics</div>
+        {!isMobile ? (
+          <>
+            <div style={heroWrapStyle}>
+              <div style={styles.heroCard}>
+                <div style={styles.eyebrow}>HYROX performance planning</div>
+                <h1 style={heroTitleStyle}>Build a race-ready HYROX programme from your actual benchmarks.</h1>
+                <p style={heroTextStyle}>
+                  Generate structured training phases, benchmark-driven pacing targets, strength progressions, and a full weekly plan tailored to your fitness, race date, and HYROX goals.
+                </p>
+                <div style={ctaRowStyle}>
+                  <button style={styles.primaryButton} onClick={() => setActiveTab("inputs")}>Build my plan</button>
+                  <button style={styles.secondaryButton} onClick={() => setActiveTab("dashboard")}>View performance dashboard</button>
+                </div>
+                <div style={heroStatsStyle}>
+                  <div style={styles.statCard}>
+                    <div style={styles.smallCaps}>Inputs</div>
+                    <div style={{ fontSize: 20, fontWeight: 800 }}>10+</div>
+                    <div style={styles.featureText}>Benchmarks and strength metrics</div>
+                  </div>
+                  <div style={styles.statCard}>
+                    <div style={styles.smallCaps}>Output</div>
+                    <div style={{ fontSize: 20, fontWeight: 800 }}>Full block</div>
+                    <div style={styles.featureText}>Date-driven weekly HYROX programming</div>
+                  </div>
+                  <div style={styles.statCard}>
+                    <div style={styles.smallCaps}>Focus</div>
+                    <div style={{ fontSize: 20, fontWeight: 800 }}>Race specific</div>
+                    <div style={styles.featureText}>Pacing, strength, and hybrid readiness</div>
+                  </div>
+                </div>
               </div>
-              <div style={styles.statCard}>
-                <div style={styles.smallCaps}>Output</div>
-                <div style={{ fontSize: 20, fontWeight: 800 }}>Full block</div>
-                <div style={styles.featureText}>Date-driven weekly HYROX programming</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.smallCaps}>Focus</div>
-                <div style={{ fontSize: 20, fontWeight: 800 }}>Race specific</div>
-                <div style={styles.featureText}>Pacing, strength, and hybrid readiness</div>
-              </div>
-            </div>
-          </div>
 
-          <SectionCard title="Programme Window" subtitle="Your training block updates automatically once you enter a valid start date and race date.">
+              <SectionCard title="Programme Window" subtitle="Your training block updates automatically once you enter a valid start date and race date.">
+                <div style={{ display: "grid", gap: 4 }}>
+                  <div style={styles.metricRow}><span>Total days</span><strong>{program.totalDays ?? "-"}</strong></div>
+                  <div style={styles.metricRow}><span>Total weeks</span><strong>{program.totalDays !== null ? program.totalWeeks : "-"}</strong></div>
+                  <div style={styles.metricRow}><span>Phase 1</span><strong>{program.totalDays !== null ? program.phase1Weeks : "-"}</strong></div>
+                  <div style={styles.metricRow}><span>Phase 2</span><strong>{program.totalDays !== null ? program.phase2Weeks : "-"}</strong></div>
+                  <div style={styles.metricRow}><span>Phase 3</span><strong>{program.totalDays !== null ? program.phase3Weeks : "-"}</strong></div>
+                  <div style={styles.metricRow}><span>Taper</span><strong>{program.totalDays !== null ? program.taperWeeks : "-"}</strong></div>
+                </div>
+              </SectionCard>
+            </div>
+
+            <div style={featureGridStyle}>
+              <div style={styles.featureCard}>
+                <div style={styles.featureTitle}>Benchmark-driven pacing</div>
+                <p style={styles.featureText}>Uses your row, ski, run, and FTP numbers to generate more usable training targets.</p>
+              </div>
+              <div style={styles.featureCard}>
+                <div style={styles.featureTitle}>Phase-based loading</div>
+                <p style={styles.featureText}>Strength work shifts through build, specific preparation, and taper instead of staying static.</p>
+              </div>
+              <div style={styles.featureCard}>
+                <div style={styles.featureTitle}>HYROX-specific structure</div>
+                <p style={styles.featureText}>Each week includes hybrid sessions, erg work, strength, accessory work, and race-relevant fatigue management.</p>
+              </div>
+            </div>
+          </>
+        ) : (
+          <SectionCard title="Programme Window" subtitle="Enter your dates and benchmarks below, then build your plan.">
             <div style={{ display: "grid", gap: 4 }}>
               <div style={styles.metricRow}><span>Total days</span><strong>{program.totalDays ?? "-"}</strong></div>
               <div style={styles.metricRow}><span>Total weeks</span><strong>{program.totalDays !== null ? program.totalWeeks : "-"}</strong></div>
@@ -864,22 +911,7 @@ export default function App() {
               <div style={styles.metricRow}><span>Taper</span><strong>{program.totalDays !== null ? program.taperWeeks : "-"}</strong></div>
             </div>
           </SectionCard>
-        </div>
-
-        <div style={featureGridStyle}>
-          <div style={styles.featureCard}>
-            <div style={styles.featureTitle}>Benchmark-driven pacing</div>
-            <p style={styles.featureText}>Uses your row, ski, run, and FTP numbers to generate more usable training targets.</p>
-          </div>
-          <div style={styles.featureCard}>
-            <div style={styles.featureTitle}>Phase-based loading</div>
-            <p style={styles.featureText}>Strength work shifts through build, specific preparation, and taper instead of staying static.</p>
-          </div>
-          <div style={styles.featureCard}>
-            <div style={styles.featureTitle}>HYROX-specific structure</div>
-            <p style={styles.featureText}>Each week includes hybrid sessions, erg work, strength, accessory work, and race-relevant fatigue management.</p>
-          </div>
-        </div>
+        )}
 
         <div style={tabBarStyle}>
           <button style={styles.tabButton(activeTab === "inputs")} onClick={() => setActiveTab("inputs")}>Inputs</button>
@@ -928,61 +960,76 @@ export default function App() {
             </SectionCard>
 
             <div style={grid2Style}>
-            <SectionCard title="Programme Setup">
-              <div style={{ display: "grid", gap: 16 }}>
-                <div style={styles.fieldGroup}>
-                  <label style={styles.label}>Start date</label>
-                  <input style={inputStyle} type="date" value={setup.startDate} onChange={(e) => setSetup((s) => ({ ...s, startDate: e.target.value }))} />
-                </div>
-                <div style={styles.fieldGroup}>
-                  <label style={styles.label}>Race date</label>
-                  <input style={inputStyle} type="date" value={setup.raceDate} onChange={(e) => setSetup((s) => ({ ...s, raceDate: e.target.value }))} />
-                </div>
-                {setup.startDate && setup.raceDate && program.totalDays === null ? (
-                  <div style={styles.warning}>Race date must be after the start date.</div>
-                ) : null}
-                <div style={styles.switchRow}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>Include Saturday HYROX class</div>
-                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>Replaces an existing hard hybrid session rather than adding extra load.</div>
+              <SectionCard title="Programme Setup">
+                <div style={{ display: "grid", gap: 16 }}>
+                  <div style={styles.fieldGroup}>
+                    <label style={styles.label}>Start date</label>
+                    <input style={inputStyle} type="date" value={setup.startDate} onChange={(e) => setSetup((s) => ({ ...s, startDate: e.target.value }))} />
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={setup.saturdayClass}
-                    onChange={(e) => setSetup((s) => ({ ...s, saturdayClass: e.target.checked }))}
-                  />
+                  <div style={styles.fieldGroup}>
+                    <label style={styles.label}>Race date</label>
+                    <input style={inputStyle} type="date" value={setup.raceDate} onChange={(e) => setSetup((s) => ({ ...s, raceDate: e.target.value }))} />
+                  </div>
+                  {setup.startDate && setup.raceDate && program.totalDays === null ? (
+                    <div style={styles.warning}>Race date must be after the start date.</div>
+                  ) : null}
+                  <div style={styles.switchRow}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>Include Saturday HYROX class</div>
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>Replaces an existing hard hybrid session rather than adding extra load.</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={setup.saturdayClass}
+                      onChange={(e) => setSetup((s) => ({ ...s, saturdayClass: e.target.checked }))}
+                    />
+                  </div>
                 </div>
-              </div>
-            </SectionCard>
+              </SectionCard>
 
-            <SectionCard title="Benchmarks">
-              <div style={grid3Style}>
-                {inputTimeFields.map(([label, key]) => (
-                  <div key={key} style={styles.fieldGroup}>
-                    <label style={styles.label}>{label}</label>
-                    <input
-                      style={inputStyle}
-                      value={String(benchmarks[key])}
-                      onChange={(e) => setBenchmarks((b) => ({ ...b, [key]: e.target.value }))}
-                    />
+              <SectionCard title="Benchmarks">
+                <div style={grid3Style}>
+                  {inputTimeFields.map(([label, key]) => (
+                    <div key={key} style={styles.fieldGroup}>
+                      <label style={styles.label}>{label}</label>
+                      <input
+                        style={inputStyle}
+                        value={String(benchmarks[key])}
+                        onChange={(e) => setBenchmarks((b) => ({ ...b, [key]: e.target.value }))}
+                      />
+                    </div>
+                  ))}
+                  {inputNumberFields.map(([label, key]) => (
+                    <div key={key} style={styles.fieldGroup}>
+                      <label style={styles.label}>{label}</label>
+                      <input
+                        style={inputStyle}
+                        type="number"
+                        step="0.1"
+                        value={Number(benchmarks[key])}
+                        onChange={(e) => setBenchmarks((b) => ({ ...b, [key]: Number(e.target.value) }))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+            </div>
+
+            {isMobile ? (
+              <div style={styles.mobileBuildSection}>
+                <div style={styles.mobileBuildCard}>
+                  <div style={styles.mobileBuildMeta}>
+                    <span>{setup.startDate ? "Start date set" : "Add start date"}</span>
+                    <span>{setup.raceDate ? "Race date set" : "Add race date"}</span>
                   </div>
-                ))}
-                {inputNumberFields.map(([label, key]) => (
-                  <div key={key} style={styles.fieldGroup}>
-                    <label style={styles.label}>{label}</label>
-                    <input
-                      style={inputStyle}
-                      type="number"
-                      step="0.1"
-                      value={Number(benchmarks[key])}
-                      onChange={(e) => setBenchmarks((b) => ({ ...b, [key]: Number(e.target.value) }))}
-                    />
-                  </div>
-                ))}
+                  <p style={styles.mobileBuildText}>
+                    Once your benchmarks and dates are entered, build the plan to jump straight to your performance dashboard.
+                  </p>
+                  <button style={{ ...styles.primaryButton, width: "100%" }} onClick={buildPlan}>Build my plan</button>
+                </div>
               </div>
-            </SectionCard>
+            ) : null}
           </div>
-        </div>
         ) : null}
 
         {activeTab === "dashboard" ? (
@@ -1062,8 +1109,6 @@ export default function App() {
             ))}
           </div>
         ) : null}
-
-        
       </div>
     </div>
   );
