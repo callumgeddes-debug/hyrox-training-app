@@ -14,10 +14,15 @@ type Benchmarks = {
   lungeLoad: number;
 };
 
+type RunMode = "full" | "reduced" | "none";
+type ReplacementTool = "bike" | "row" | "ski" | "mixed";
+
 type Setup = {
   startDate: string;
   raceDate: string;
   saturdayClass: boolean;
+  runMode: RunMode;
+  replacementTool: ReplacementTool;
 };
 
 type Session = {
@@ -71,6 +76,8 @@ const defaultSetup: Setup = {
   startDate: "",
   raceDate: "",
   saturdayClass: false,
+  runMode: "full",
+  replacementTool: "bike",
 };
 
 const strengthPercents = {
@@ -558,6 +565,68 @@ export default function App() {
     }
   }
 
+  function formatDuration(seconds: number): string {
+    const rounded = Math.max(30, Math.round(seconds));
+    const mins = Math.floor(rounded / 60);
+    const secs = rounded % 60;
+    return `${mins}:${String(secs).padStart(2, "0")}`;
+  }
+
+  function shouldReplaceRun(intent: "easy" | "threshold" | "hyrox" | "interval") {
+    if (setup.runMode === "none") return true;
+    if (setup.runMode === "reduced") return intent === "easy" || intent === "threshold";
+    return false;
+  }
+
+  function replacementForRun(distanceMeters: number, durationSeconds: number, intent: "easy" | "threshold" | "hyrox" | "interval") {
+    const roundedDistance = Math.max(500, Math.round(distanceMeters / 250) * 250);
+    const bikeTarget =
+      intent === "easy"
+        ? Math.round(derived.bikeZones.z2)
+        : intent === "interval"
+          ? Math.round(derived.bikeZones.vo2)
+          : Math.round(derived.bikeZones.threshold);
+    const rowSplit =
+      intent === "easy"
+        ? (derived.rowThreshold ?? 120) + 8
+        : intent === "interval"
+          ? derived.rowVo2 ?? derived.rowThreshold ?? 120
+          : derived.rowThreshold ?? 120;
+    const skiSplit =
+      intent === "easy"
+        ? (derived.skiThreshold ?? 130) + 8
+        : intent === "interval"
+          ? derived.skiVo2 ?? derived.skiThreshold ?? 130
+          : derived.skiThreshold ?? 130;
+
+    if (setup.replacementTool === "bike") {
+      return `BikeErg ${formatDuration(durationSeconds)} @ ${bikeTarget} W`;
+    }
+
+    if (setup.replacementTool === "row") {
+      return `RowErg ${roundedDistance}m @ ${formatSecondsToPace(rowSplit, "/500m")}`;
+    }
+
+    if (setup.replacementTool === "ski") {
+      return `SkiErg ${roundedDistance}m @ ${formatSecondsToPace(skiSplit, "/500m")}`;
+    }
+
+    return `BikeErg ${formatDuration(durationSeconds * 0.5)} @ ${Math.round(intent === "easy" ? derived.bikeZones.z2 : derived.bikeZones.tempo)} W + RowErg ${Math.max(250, Math.round(roundedDistance / 2 / 250) * 250)}m @ ${formatSecondsToPace(intent === "interval" ? rowSplit : derived.rowThreshold ?? 120, "/500m")}`;
+  }
+
+  function runPiece(distanceMeters: number, paceSeconds: number | null, intent: "easy" | "threshold" | "hyrox" | "interval") {
+    const distanceLabel = distanceMeters >= 1000 ? `${distanceMeters / 1000}km` : `${distanceMeters}m`;
+    const estimatedSeconds = paceSeconds ? paceSeconds * (distanceMeters / 1000) : 180;
+    const original = `Run ${distanceLabel} @ ${formatSecondsToPace(paceSeconds ?? 0, "/km")}`;
+    if (!shouldReplaceRun(intent)) return original;
+    return replacementForRun(distanceMeters, estimatedSeconds, intent);
+  }
+
+  function aerobicRunAddon() {
+    if (!shouldReplaceRun("easy")) return ` + easy run @ ${formatSecondsToPace(derived.runEasy ?? 0, "/km")}`;
+    return ` + ${replacementForRun(3000, (derived.runEasy ?? 330) * 3, "easy")}`;
+  }
+
   const derived = useMemo(() => {
     const ski500 = parseTimeToSeconds(benchmarks.ski500);
     const ski2000 = parseTimeToSeconds(benchmarks.ski2000);
@@ -658,12 +727,12 @@ export default function App() {
           name: setup.saturdayClass ? "HYROX Mixed / Saturday Class Replacement Logic" : "HYROX Mixed",
           main:
             phase === "Phase 1"
-              ? `3 rounds: Row 1000m @ ${formatSecondsToPace(derived.rowThreshold ?? 0, "/500m")} + Run 800m @ ${formatSecondsToPace(derived.runHyrox ?? 0, "/km")}, rest 2:00`
+              ? `3 rounds: Row 1000m @ ${formatSecondsToPace(derived.rowThreshold ?? 0, "/500m")} + ${runPiece(800, derived.runHyrox, "hyrox")}, rest 2:00`
               : phase === "Phase 2"
-                ? `4 rounds: Ski 1000m @ ${formatSecondsToPace(derived.skiThreshold ?? 0, "/500m")} + Run 1km @ ${formatSecondsToPace(derived.runHyrox ?? 0, "/km")} + 20 lunges, rest 2:00`
+                ? `4 rounds: Ski 1000m @ ${formatSecondsToPace(derived.skiThreshold ?? 0, "/500m")} + ${runPiece(1000, derived.runHyrox, "hyrox")} + 20 lunges, rest 2:00`
                 : phase === "Phase 3"
-                  ? `6 rounds: Run 1km @ ${formatSecondsToPace(derived.runHyrox ?? 0, "/km")} + Row 500m @ ${formatSecondsToPace(derived.rowVo2 ?? 0, "/500m")} + 20 lunges, rest 90s`
-                  : `2 rounds: Run 800m @ ${formatSecondsToPace(derived.runHyrox ?? 0, "/km")} + Ski 500m @ ${formatSecondsToPace(derived.skiVo2 ?? 0, "/500m")}, full recovery`,
+                  ? `6 rounds: ${runPiece(1000, derived.runHyrox, "hyrox")} + Row 500m @ ${formatSecondsToPace(derived.rowVo2 ?? 0, "/500m")} + 20 lunges, rest 90s`
+                  : `2 rounds: ${runPiece(800, derived.runHyrox, "threshold")} + Ski 500m @ ${formatSecondsToPace(derived.skiVo2 ?? 0, "/500m")}, full recovery`,
           strength: `Bulgarian Split Squat ${phase === "Phase 3" ? "3x6/leg" : phase === "Taper" ? "2x6/leg" : "3x8/leg"} @ ${bssLoad.toFixed(1)} kg`,
           accessory: `Walking lunges 4x20 steps @ ${benchmarks.lungeLoad.toFixed(1)} kg | Hip mobility 2x60s/side`,
         },
@@ -675,7 +744,7 @@ export default function App() {
               ? `BikeErg 60min @ ${Math.round(derived.bikeZones.z2)} W`
               : phase === "Taper"
                 ? `BikeErg 30min @ ${Math.round(derived.bikeZones.z2)} W`
-                : `BikeErg 40min @ ${Math.round(derived.bikeZones.z2)} W${phase === "Phase 2" ? ` + easy run @ ${formatSecondsToPace(derived.runEasy ?? 0, "/km")}` : ""}`,
+                : `BikeErg 40min @ ${Math.round(derived.bikeZones.z2)} W${phase === "Phase 2" ? aerobicRunAddon() : ""}`,
           strength: phase === "Taper" ? "-" : `Deadlift ${phase === "Phase 1" ? "5x3" : phase === "Phase 2" ? "4x4" : "4x3"} @ ${deadliftLoad.toFixed(1)} kg`,
           accessory: `Tibialis raises 3x20 | Eccentric calf raises 3x15 | Plank 3x45s`,
         },
@@ -687,7 +756,7 @@ export default function App() {
               ? `SkiErg 4x5min @ ${formatSecondsToPace(derived.skiThreshold ?? 0, "/500m")}, 2:00 rest`
               : phase === "Phase 3"
                 ? `Ski 500m @ ${formatSecondsToPace(derived.skiVo2 ?? 0, "/500m")} + Row 500m @ ${formatSecondsToPace(derived.rowVo2 ?? 0, "/500m")}`
-                : `Run @ ${formatSecondsToPace(derived.runHyrox ?? 0, "/km")} | Row @ ${formatSecondsToPace(derived.rowThreshold ?? 0, "/500m")}`,
+                : `${runPiece(1000, derived.runHyrox, "threshold")} | Row @ ${formatSecondsToPace(derived.rowThreshold ?? 0, "/500m")}`,
           strength:
             phase === "Phase 1"
               ? `Back Squat 5x5 @ ${squatLoad.toFixed(1)} kg`
@@ -705,9 +774,9 @@ export default function App() {
             phase === "Phase 1"
               ? `6 rounds: Row 500m @ ${formatSecondsToPace(derived.rowVo2 ?? 0, "/500m")} + Ski 500m @ ${formatSecondsToPace(derived.skiVo2 ?? 0, "/500m")}, rest 90s`
               : phase === "Phase 2"
-                ? `5 rounds: 20 lunges + Run 1km @ ${formatSecondsToPace(derived.runIntervals ?? 0, "/km")} + Row 500m @ ${formatSecondsToPace(derived.rowVo2 ?? 0, "/500m")}, rest 90s`
+                ? `5 rounds: 20 lunges + ${runPiece(1000, derived.runIntervals, "interval")} + Row 500m @ ${formatSecondsToPace(derived.rowVo2 ?? 0, "/500m")}, rest 90s`
                 : phase === "Phase 3"
-                  ? `5 rounds: Run 1km @ ${formatSecondsToPace(derived.runHyrox ?? 0, "/km")} + Row 500m @ ${formatSecondsToPace(derived.rowVo2 ?? 0, "/500m")}, rest 90s`
+                  ? `5 rounds: ${runPiece(1000, derived.runHyrox, "hyrox")} + Row 500m @ ${formatSecondsToPace(derived.rowVo2 ?? 0, "/500m")}, rest 90s`
                   : `Off feet or very easy spin`,
           strength:
             phase === "Phase 1"
@@ -1113,6 +1182,23 @@ export default function App() {
                   {setup.startDate && setup.raceDate && program.totalDays === null ? (
                     <div style={styles.warning}>Race date must be after the start date.</div>
                   ) : null}
+                  <div style={styles.fieldGroup}>
+                    <label style={styles.label}>Run Mode</label>
+                    <select style={selectStyle} value={setup.runMode} onChange={(e) => setSetup((s) => ({ ...s, runMode: e.target.value as RunMode }))}>
+                      <option value="full">Full Running</option>
+                      <option value="reduced">Reduced Impact</option>
+                      <option value="none">No Running</option>
+                    </select>
+                  </div>
+                  <div style={styles.fieldGroup}>
+                    <label style={styles.label}>Run Replacement Tool</label>
+                    <select style={selectStyle} value={setup.replacementTool} onChange={(e) => setSetup((s) => ({ ...s, replacementTool: e.target.value as ReplacementTool }))}>
+                      <option value="bike">BikeErg</option>
+                      <option value="row">RowErg</option>
+                      <option value="ski">SkiErg</option>
+                      <option value="mixed">Mixed Ergs</option>
+                    </select>
+                  </div>
                   <div style={styles.switchRow}>
                     <div>
                       <div style={{ fontWeight: 600 }}>Include Saturday HYROX class</div>
@@ -1189,7 +1275,7 @@ export default function App() {
                 </div>
               </SectionCard>
 
-              <SectionCard title="Reference Zones">
+              <SectionCard title="Reference Zones" subtitle={`Run mode: ${setup.runMode === "full" ? "Full Running" : setup.runMode === "reduced" ? `Reduced Impact • ${setup.replacementTool}` : `No Running • ${setup.replacementTool}`}`}>
                 <div style={{ display: "grid", gap: 10 }}>
                   <div style={{ ...styles.softBlock, border: "1px solid #e2e8f0" }}>
                     <div style={{ fontWeight: 600, marginBottom: 4 }}>Row VO2</div>
