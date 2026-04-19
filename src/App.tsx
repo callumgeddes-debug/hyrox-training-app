@@ -38,6 +38,11 @@ type Profile = {
   updatedAt: string;
 };
 
+type BuildState = {
+  benchmarks: Benchmarks;
+  setup: Setup;
+};
+
 const MOBILE_BREAKPOINT = 768;
 const TABLET_BREAKPOINT = 1100;
 
@@ -45,6 +50,7 @@ const STORAGE_KEYS = {
   currentBenchmarks: "hyrox_planner_current_benchmarks",
   currentSetup: "hyrox_planner_current_setup",
   profiles: "hyrox_planner_profiles",
+  lastBuiltState: "hyrox_planner_last_built_state",
 };
 
 const defaultBenchmarks: Benchmarks = {
@@ -454,6 +460,12 @@ export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>(() => safeRead(STORAGE_KEYS.profiles, []));
   const [selectedProfileId, setSelectedProfileId] = useState<string>("");
   const [profileName, setProfileName] = useState<string>("");
+  const [lastBuiltState, setLastBuiltState] = useState<BuildState>(() =>
+    safeRead(STORAGE_KEYS.lastBuiltState, {
+      benchmarks: safeRead(STORAGE_KEYS.currentBenchmarks, defaultBenchmarks),
+      setup: safeRead(STORAGE_KEYS.currentSetup, defaultSetup),
+    })
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -476,6 +488,11 @@ export default function App() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(STORAGE_KEYS.profiles, JSON.stringify(profiles));
   }, [profiles]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(STORAGE_KEYS.lastBuiltState, JSON.stringify(lastBuiltState));
+  }, [lastBuiltState]);
 
   const isMobile = viewportWidth < MOBILE_BREAKPOINT;
   const isTablet = viewportWidth >= MOBILE_BREAKPOINT && viewportWidth < TABLET_BREAKPOINT;
@@ -534,6 +551,7 @@ export default function App() {
   }
 
   function buildPlan() {
+    setLastBuiltState({ benchmarks, setup });
     setActiveTab("dashboard");
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -805,6 +823,10 @@ export default function App() {
       }),
     };
   }, [setup.startDate, program]);
+
+  const hasUnbuiltChanges = useMemo(() => {
+    return JSON.stringify({ benchmarks, setup }) !== JSON.stringify(lastBuiltState);
+  }, [benchmarks, setup, lastBuiltState]);
 
   const benchmarkCards = [
     { label: "HYROX Run Pace", value: derived.runHyrox ? formatSecondsToPace(derived.runHyrox, "/km") : "-" },
@@ -1133,7 +1155,7 @@ export default function App() {
               </SectionCard>
             </div>
 
-            {isMobile ? (
+            {isMobile && hasUnbuiltChanges ? (
               <div style={styles.mobileBuildSection}>
                 <div style={styles.mobileBuildCard}>
                   <div style={styles.mobileBuildMeta}>
@@ -1141,7 +1163,7 @@ export default function App() {
                     <span>{setup.raceDate ? "Race date set" : "Add race date"}</span>
                   </div>
                   <p style={styles.mobileBuildText}>
-                    Once your benchmarks and dates are entered, build the plan to jump straight to your performance dashboard.
+                    You have updated your inputs. Build the plan to refresh your dashboard with the latest dates and benchmark values.
                   </p>
                   <button style={{ ...styles.primaryButton, width: "100%" }} onClick={buildPlan}>Build my plan</button>
                 </div>
