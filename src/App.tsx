@@ -28,6 +28,8 @@ type Session = {
   accessory: string;
 };
 
+type ActiveTab = "today" | "inputs" | "dashboard" | "plan";
+
 type Profile = {
   id: string;
   name: string;
@@ -442,7 +444,7 @@ function MetricCard(props: { label: string; value: string }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"inputs" | "dashboard" | "plan">("inputs");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("inputs");
   const [viewportWidth, setViewportWidth] = useState<number>(() => {
     if (typeof window === "undefined") return 1200;
     return window.innerWidth;
@@ -739,6 +741,71 @@ export default function App() {
     };
   }, [setup, benchmarks, derived]);
 
+  const todayWorkout = useMemo(() => {
+    if (!setup.startDate) {
+      return {
+        state: "no_start_date" as const,
+        title: "Set your start date",
+        description: "Add a valid programme start date to see which workout belongs to today.",
+      };
+    }
+
+    const start = startOfDay(setup.startDate);
+    const today = startOfDay(new Date().toISOString().slice(0, 10));
+
+    if (!start || !today) {
+      return {
+        state: "invalid" as const,
+        title: "Date unavailable",
+        description: "The current workout could not be calculated from the dates provided.",
+      };
+    }
+
+    const dayOffset = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (dayOffset < 0) {
+      return {
+        state: "before_start" as const,
+        title: "Programme has not started yet",
+        description: "Your start date is still in the future, so there is no workout assigned for today.",
+      };
+    }
+
+    const totalTrainingDays = program.totalWeeks * 7;
+    if (dayOffset >= totalTrainingDays) {
+      return {
+        state: "after_plan" as const,
+        title: "Programme completed",
+        description: "Today falls after the current training block. Update your race date or start a new profile to generate the next block.",
+      };
+    }
+
+    const weekIndex = Math.floor(dayOffset / 7);
+    const dayIndex = dayOffset % 7;
+    const week = program.rows[weekIndex];
+    const session = week?.sessions[dayIndex];
+
+    if (!week || !session) {
+      return {
+        state: "invalid" as const,
+        title: "Workout unavailable",
+        description: "The current workout could not be resolved from the programme structure.",
+      };
+    }
+
+    return {
+      state: "ready" as const,
+      week,
+      session,
+      dayNumber: dayOffset + 1,
+      dateLabel: today.toLocaleDateString(undefined, {
+        weekday: "long",
+        day: "numeric",
+        month: "short",
+      }),
+    };
+  }, [setup.startDate, program]);
+
   const benchmarkCards = [
     { label: "HYROX Run Pace", value: derived.runHyrox ? formatSecondsToPace(derived.runHyrox, "/km") : "-" },
     { label: "Row VO2 Split", value: derived.rowVo2 ? formatSecondsToPace(derived.rowVo2, "/500m") : "-" },
@@ -914,10 +981,61 @@ export default function App() {
         )}
 
         <div style={tabBarStyle}>
+          <button style={styles.tabButton(activeTab === "today")} onClick={() => setActiveTab("today")}>Today</button>
           <button style={styles.tabButton(activeTab === "inputs")} onClick={() => setActiveTab("inputs")}>Inputs</button>
           <button style={styles.tabButton(activeTab === "dashboard")} onClick={() => setActiveTab("dashboard")}>Dashboard</button>
           <button style={styles.tabButton(activeTab === "plan")} onClick={() => setActiveTab("plan")}>Plan</button>
         </div>
+
+        {activeTab === "today" ? (
+          <div style={{ display: "grid", gap: 16 }}>
+            {todayWorkout.state === "ready" ? (
+              <>
+                <SectionCard title="Today's Workout" subtitle={`${todayWorkout.dateLabel} • Week ${todayWorkout.week.week} • ${todayWorkout.week.phase} • ${todayWorkout.session.day}`}>
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div style={styles.sessionCard}>
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 13, color: "#64748b" }}>Current session</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>{todayWorkout.session.name}</div>
+                      </div>
+                      <div style={grid3Style}>
+                        <div style={styles.softBlock}>
+                          <div style={styles.smallCaps}>Main Set</div>
+                          <div style={{ fontSize: 14, lineHeight: 1.6 }}>{todayWorkout.session.main || "-"}</div>
+                        </div>
+                        <div style={styles.softBlock}>
+                          <div style={styles.smallCaps}>Strength</div>
+                          <div style={{ fontSize: 14, lineHeight: 1.6 }}>{todayWorkout.session.strength || "-"}</div>
+                        </div>
+                        <div style={styles.softBlock}>
+                          <div style={styles.smallCaps}>Accessory</div>
+                          <div style={{ fontSize: 14, lineHeight: 1.6 }}>{todayWorkout.session.accessory || "-"}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </SectionCard>
+
+                <div style={grid2Style}>
+                  <MetricCard label="Today" value={todayWorkout.dateLabel} />
+                  <MetricCard label="Training Day" value={`Day ${todayWorkout.dayNumber}`} />
+                </div>
+              </>
+            ) : (
+              <SectionCard title="Today's Workout" subtitle={todayWorkout.description}>
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div style={styles.softBlock}>
+                    <div style={styles.smallCaps}>Status</div>
+                    <div style={{ fontSize: 16, fontWeight: 700 }}>{todayWorkout.title}</div>
+                  </div>
+                  <button style={{ ...styles.primaryButton, width: isMobile ? "100%" : undefined }} onClick={() => setActiveTab("inputs")}>
+                    Go to Inputs
+                  </button>
+                </div>
+              </SectionCard>
+            )}
+          </div>
+        ) : null}
 
         {activeTab === "inputs" ? (
           <div style={{ display: "grid", gap: 16 }}>
