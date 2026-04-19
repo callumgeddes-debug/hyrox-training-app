@@ -16,6 +16,7 @@ type Benchmarks = {
 
 type RunMode = "full" | "reduced" | "none";
 type ReplacementTool = "bike" | "row" | "ski" | "mixed";
+type RunFocus = "auto" | "low" | "balanced" | "high";
 
 type Setup = {
   startDate: string;
@@ -23,6 +24,7 @@ type Setup = {
   saturdayClass: boolean;
   runMode: RunMode;
   replacementTool: ReplacementTool;
+  runFocus: RunFocus;
 };
 
 type Session = {
@@ -78,6 +80,7 @@ const defaultSetup: Setup = {
   saturdayClass: false,
   runMode: "full",
   replacementTool: "bike",
+  runFocus: "auto",
 };
 
 const strengthPercents = {
@@ -627,6 +630,54 @@ export default function App() {
     return ` + ${replacementForRun(3000, (derived.runEasy ?? 330) * 3, "easy")}`;
   }
 
+  function createRunDevelopmentSession(phase: string, squatLoad: number, bssLoad: number): Session {
+    if (phase === "Phase 1") {
+      return {
+        day: "Day 4",
+        name: "Run Development",
+        main: shouldReplaceRun("easy")
+          ? replacementForRun(5000, (derived.runEasy ?? 330) * 5, "easy")
+          : `Aerobic run 35-45min @ ${formatSecondsToPace(derived.runEasy ?? 0, "/km")}`,
+        strength: `Single-leg squat 3x8/leg @ ${Math.max(10, bssLoad * 0.6).toFixed(1)} kg`,
+        accessory: `Calf eccentrics 3x15 | Tibialis raises 3x20 | Hip mobility 2x60s/side`,
+      };
+    }
+
+    if (phase === "Phase 2") {
+      return {
+        day: "Day 4",
+        name: "Run Development",
+        main: shouldReplaceRun("threshold")
+          ? `5 x ${replacementForRun(800, (derived.runIntervals ?? 270) * 0.8, "threshold")}, 90s rest`
+          : `5 x 800m @ ${formatSecondsToPace((derived.runPerKm ?? 0) - 5, "/km")}, 90s rest`,
+        strength: `Back Squat 4x4 @ ${(squatLoad * 0.92).toFixed(1)} kg`,
+        accessory: `Calf eccentrics 3x15 | Tibialis raises 3x20 | Hip mobility 2x60s/side`,
+      };
+    }
+
+    if (phase === "Phase 3") {
+      return {
+        day: "Day 4",
+        name: "Run Development",
+        main: shouldReplaceRun("hyrox")
+          ? `4 rounds: ${replacementForRun(1000, derived.runHyrox ?? 300, "hyrox")}, 75s rest`
+          : `4 x 1km @ ${formatSecondsToPace(derived.runHyrox ?? 0, "/km")}, 75s rest`,
+        strength: `Bulgarian Split Squat 2x6/leg @ ${(bssLoad * 0.9).toFixed(1)} kg`,
+        accessory: `Calf eccentrics 3x12 | Tibialis raises 3x20 | Hip mobility 2x60s/side`,
+      };
+    }
+
+    return {
+      day: "Day 4",
+      name: "Run Development",
+      main: shouldReplaceRun("threshold")
+        ? replacementForRun(3000, (derived.runHyrox ?? 300) * 3, "threshold")
+        : `Run 20min easy @ ${formatSecondsToPace(derived.runEasy ?? 0, "/km")}`,
+      strength: `Activation only`,
+      accessory: `Mobility 10min | Breathing reset 5min`,
+    };
+  }
+
   const derived = useMemo(() => {
     const ski500 = parseTimeToSeconds(benchmarks.ski500);
     const ski2000 = parseTimeToSeconds(benchmarks.ski2000);
@@ -659,6 +710,16 @@ export default function App() {
     const threshold = benchmarks.ftp * 0.9;
     const vo2 = benchmarks.ftp * 1.05;
 
+    let runFocusAuto: Exclude<RunFocus, "auto"> = "balanced";
+    if (runPerKm !== null && row2kSplit !== null) {
+      const runVsRow = runPerKm - row2kSplit * 2.9;
+      if (runVsRow > 18 || (benchmarks.squat5rm >= 125 && runPerKm > 290)) {
+        runFocusAuto = "high";
+      } else if (runVsRow < -8 && rowWeakness !== null && rowWeakness > 10) {
+        runFocusAuto = "low";
+      }
+    }
+
     return {
       ski500,
       ski2000,
@@ -677,8 +738,11 @@ export default function App() {
       skiVo2,
       weaknessFlags,
       bikeZones: { z2, tempo, threshold, vo2 },
+      runFocusAuto,
     };
   }, [benchmarks]);
+
+  const resolvedRunFocus: Exclude<RunFocus, "auto"> = setup.runFocus === "auto" ? derived.runFocusAuto : setup.runFocus;
 
   const program = useMemo(() => {
     const start = startOfDay(setup.startDate);
@@ -714,6 +778,29 @@ export default function App() {
       const deadliftLoad = benchmarks.deadlift5rm * p.deadlift;
       const pullLoad = benchmarks.weightedPullup * p.pull;
 
+      const day4Session: Session =
+        resolvedRunFocus === "high" && setup.runMode !== "none"
+          ? createRunDevelopmentSession(phase, squatLoad, bssLoad)
+          : {
+              day: "Day 4",
+              name: "Ski / Run Threshold",
+              main:
+                phase === "Phase 1" || phase === "Phase 2"
+                  ? `SkiErg 4x5min @ ${formatSecondsToPace(derived.skiThreshold ?? 0, "/500m")}, 2:00 rest`
+                  : phase === "Phase 3"
+                    ? `Ski 500m @ ${formatSecondsToPace(derived.skiVo2 ?? 0, "/500m")} + Row 500m @ ${formatSecondsToPace(derived.rowVo2 ?? 0, "/500m")}`
+                    : `${runPiece(1000, derived.runHyrox, "threshold")} | Row @ ${formatSecondsToPace(derived.rowThreshold ?? 0, "/500m")}`,
+              strength:
+                phase === "Phase 1"
+                  ? `Back Squat 5x5 @ ${squatLoad.toFixed(1)} kg`
+                  : phase === "Phase 2"
+                    ? `Bulgarian Split Squat 3x8/leg @ ${bssLoad.toFixed(1)} kg`
+                    : phase === "Phase 3"
+                      ? `Bulgarian Split Squat 3x6/leg @ ${bssLoad.toFixed(1)} kg`
+                      : "-",
+              accessory: phase === "Taper" ? "Easy activation: band work 2x12 | Breathing 5min" : "Farmer carry 4x20m | Side plank 3x30s/side",
+            };
+
       const sessions: Session[] = [
         {
           day: "Day 1",
@@ -748,25 +835,7 @@ export default function App() {
           strength: phase === "Taper" ? "-" : `Deadlift ${phase === "Phase 1" ? "5x3" : phase === "Phase 2" ? "4x4" : "4x3"} @ ${deadliftLoad.toFixed(1)} kg`,
           accessory: `Tibialis raises 3x20 | Eccentric calf raises 3x15 | Plank 3x45s`,
         },
-        {
-          day: "Day 4",
-          name: "Ski / Run Threshold",
-          main:
-            phase === "Phase 1" || phase === "Phase 2"
-              ? `SkiErg 4x5min @ ${formatSecondsToPace(derived.skiThreshold ?? 0, "/500m")}, 2:00 rest`
-              : phase === "Phase 3"
-                ? `Ski 500m @ ${formatSecondsToPace(derived.skiVo2 ?? 0, "/500m")} + Row 500m @ ${formatSecondsToPace(derived.rowVo2 ?? 0, "/500m")}`
-                : `${runPiece(1000, derived.runHyrox, "threshold")} | Row @ ${formatSecondsToPace(derived.rowThreshold ?? 0, "/500m")}`,
-          strength:
-            phase === "Phase 1"
-              ? `Back Squat 5x5 @ ${squatLoad.toFixed(1)} kg`
-              : phase === "Phase 2"
-                ? `Bulgarian Split Squat 3x8/leg @ ${bssLoad.toFixed(1)} kg`
-                : phase === "Phase 3"
-                  ? `Bulgarian Split Squat 3x6/leg @ ${bssLoad.toFixed(1)} kg`
-                  : "-",
-          accessory: phase === "Taper" ? "Easy activation: band work 2x12 | Breathing 5min" : "Farmer carry 4x20m | Side plank 3x30s/side",
-        },
+        day4Session,
         {
           day: "Day 5",
           name: "Compromised Intervals",
@@ -826,7 +895,7 @@ export default function App() {
       taperWeeks,
       rows,
     };
-  }, [setup, benchmarks, derived]);
+  }, [setup, benchmarks, derived, resolvedRunFocus]);
 
   const todayWorkout = useMemo(() => {
     if (!setup.startDate) {
@@ -1191,6 +1260,15 @@ export default function App() {
                     </select>
                   </div>
                   <div style={styles.fieldGroup}>
+                    <label style={styles.label}>Run Focus</label>
+                    <select style={selectStyle} value={setup.runFocus} onChange={(e) => setSetup((s) => ({ ...s, runFocus: e.target.value as RunFocus }))}>
+                      <option value="auto">Auto</option>
+                      <option value="low">Low</option>
+                      <option value="balanced">Balanced</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <div style={styles.fieldGroup}>
                     <label style={styles.label}>Run Replacement Tool</label>
                     <select style={selectStyle} value={setup.replacementTool} onChange={(e) => setSetup((s) => ({ ...s, replacementTool: e.target.value as ReplacementTool }))}>
                       <option value="bike">BikeErg</option>
@@ -1267,7 +1345,7 @@ export default function App() {
             </div>
 
             <div style={grid2Style}>
-              <SectionCard title="Weakness Analysis">
+              <SectionCard title="Weakness Analysis" subtitle={`Run focus: ${setup.runFocus === "auto" ? `Auto • ${derived.runFocusAuto}` : setup.runFocus}`}>
                 <div style={{ display: "grid", gap: 10 }}>
                   {derived.weaknessFlags.map((flag, idx) => (
                     <div key={idx} style={{ ...styles.softBlock, border: "1px solid #e2e8f0" }}>{flag}</div>
