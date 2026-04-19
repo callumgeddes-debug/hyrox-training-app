@@ -626,8 +626,15 @@ export default function App() {
   }
 
   function aerobicRunAddon() {
-    if (!shouldReplaceRun("easy")) return ` + easy run @ ${formatSecondsToPace(derived.runEasy ?? 0, "/km")}`;
-    return ` + ${replacementForRun(3000, (derived.runEasy ?? 330) * 3, "easy")}`;
+    const easyRunDurationMinutes = 20;
+    const easyRunSeconds = easyRunDurationMinutes * 60;
+    const estimatedDistance = derived.runEasy ? Math.round((easyRunSeconds / derived.runEasy) * 1000) : 3500;
+
+    if (!shouldReplaceRun("easy")) {
+      return ` + easy run ${easyRunDurationMinutes}min @ ${formatSecondsToPace(derived.runEasy ?? 0, "/km")}`;
+    }
+
+    return ` + ${replacementForRun(estimatedDistance, easyRunSeconds, "easy")}`;
   }
 
   function createRunDevelopmentSession(phase: string, squatLoad: number, bssLoad: number): Session {
